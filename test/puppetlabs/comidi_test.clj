@@ -45,6 +45,10 @@
       (is (= {:path           ["/foo/" :foo]
               :request-method :any}
              (update-route-info* orig-route-info ["/foo/" :foo]))))
+    (testing "boolean true is handled specially"
+      (is (= {:path           ["*"]
+              :request-method :any}
+             (update-route-info* orig-route-info  true))))
     (testing "regex path element gets added to the path"
       (is (= {:path ["/foo/" ["REGEX: .*" :foo]]
               :request-method :any}
@@ -59,7 +63,8 @@
                        [["/baz" {:get :baz-handler}]
                         ["/bam" {:put :bam-handler}]
                         ["/bap" {:options :bap-handler}]]]
-                      ["/buzz" {:post :buzz-handler}]]]
+                      ["/buzz" {:post :buzz-handler}]
+                      [true {:get :true-handler}]]]
           expected-foo-meta {:path           ["" "/foo/" :foo]
                              :route-id           "foo-:foo"
                              :request-method :any}
@@ -74,18 +79,23 @@
                              :request-method :options}
           expected-buzz-meta {:path           ["" "/buzz"]
                               :route-id           "buzz"
-                              :request-method :post}]
-      (is (= (comidi/route-metadata routes)
+                              :request-method :post}
+          expected-true-meta {:path           ["" "*"]
+                              :route-id       "*"
+                              :request-method :get}]
+      (is (= (comidi/route-metadata* routes)
              {:routes [expected-foo-meta
                        expected-baz-meta
                        expected-bam-meta
                        expected-bap-meta
-                       expected-buzz-meta]
+                       expected-buzz-meta
+                       expected-true-meta]
               :handlers {:foo-handler expected-foo-meta
                          :baz-handler expected-baz-meta
                          :bam-handler expected-bam-meta
                          :bap-handler expected-bap-meta
-                         :buzz-handler expected-buzz-meta}})))))
+                         :buzz-handler expected-buzz-meta
+                         :true-handler expected-true-meta}})))))
 
 (deftest routes-test
   (is (= ["" [["/foo" :foo-handler]
@@ -116,7 +126,10 @@
                                        [["/baz/" :baz]
                                         (fn [req]
                                           {:endpoint :baz
-                                           :route-params (:route-params req)})]]]]])]
+                                           :route-params (:route-params req)})]
+                                       [true
+                                        (fn [req] :true)]]]]])]
+      (is (= :true (handler {:uri "/foo/something/else"})))
       (is (= :bar (handler {:uri "/foo/bar"})))
       (is (= {:endpoint :baz
               :route-params {:baz "howdy"}}
@@ -244,10 +257,16 @@
                       (ANY ["/bam/" [#"(?:bip|bap)" :rest]] request
                         "bam!")
                       (HEAD ["/bang/" [#".*" :rest] "/pow/" :pow] request
-                            "bang!"))
+                           "bang!")
+                     (ANY "/true" request 
+                          "omg why would you do this?")
+                     (ANY ["/is" :true] request
+                          "it hurts so bad")
+                     (ANY true request
+                          "catch all!"))
         route-meta (route-metadata test-routes)
         route-ids (map :route-id (:routes route-meta))]
-    (is (= #{"foo-something" "bar" "baz-/*/" "bam-/bip_bap/" "bang-/*/-pow-:pow"}
+    (is (= #{"foo-something" "bar" "baz-/*/" "bam-/bip_bap/" "bang-/*/-pow-:pow" "true" "is-:true" "*"}
            (set route-ids)))))
 
 (deftest wrap-with-route-metadata-test
@@ -255,7 +274,9 @@
                       (ANY ["/foo/" :foo] request
                         "foo!")
                       (GET ["/bar/" :bar] request
-                        "bar!"))
+                          "bar!")
+                     (GET "/true" request "falsetrue!")
+                     (GET true request "truetrue!"))
         route-meta  (route-metadata test-routes)
         test-atom   (atom {})
         test-middleware (fn [f]
@@ -271,6 +292,14 @@
 
     (handler {:uri "/bar/something" :request-method :get})
     (is (= (-> test-atom deref :route-info :route-id) "bar-:bar"))
+    (is (= (-> test-atom deref :route-metadata) route-meta))
+
+    (handler {:uri "/true" :request-method :get})
+    (is (= (-> test-atom deref :route-info :route-id) "true"))
+    (is (= (-> test-atom deref :route-metadata) route-meta))
+
+    (handler {:uri "/wat" :request-method :get})
+    (is (= (-> test-atom deref :route-info :route-id) "*"))
     (is (= (-> test-atom deref :route-metadata) route-meta))))
 
 (deftest route-handler-uses-existing-match-context-test

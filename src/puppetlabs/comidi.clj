@@ -30,8 +30,11 @@
 (def RegexPatternSegment
   [(schema/one Pattern "regex") (schema/one schema/Keyword "variable")])
 
+(def RouteInfoPath
+  [bidi-schema/PatternSegment])
+
 (def RouteInfo
-  {:path           [bidi-schema/PatternSegment]
+  {:path           RouteInfoPath
    :request-method RequestMethod})
 
 (def RouteInfoWithId
@@ -129,7 +132,7 @@
   route-path->route-id :- schema/Str
   "Given a route path (from comidi route-metadata), build a route-id string for
   the route.  This route-id can be used as a unique identifier for a route."
-  [route-path :- bidi-schema/Pattern]
+  [route-path :- RouteInfoPath]
   (->> route-path
        (map route-path-element->route-id-element)
        (filter #(not (empty? %)))
@@ -157,6 +160,9 @@
 
     (nil? (schema/check RegexPatternSegment pattern))
     (update-in route-info [:path] concat [pattern])
+
+    (= true pattern)
+    (update-in route-info [:path] conj "*")
 
     (sequential? pattern)
     (if-let [next (first pattern)]
